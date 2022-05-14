@@ -7,6 +7,7 @@ library("dplyr")
 library("ggplot2")
 library("cowplot")
 library("GGally")
+library("FactoMineR")
 rm(list=objects()); graphics.off()
 
 # Changer pour le directoire src du projet
@@ -40,9 +41,17 @@ plot_density <- function(column) {
 
 lapply(colnames(data)[-8], FUN=plot_density)
 
-do.call("plot_grid", as.list(plots))
-plot_grid(plots, nrow=3)
-
 ggpairs(data, columns=1:7, aes(color=Class, alpha=0.3), 
         upper = list(continuous = wrap("cor", size=2))) +
   theme_grey(base_size=8)
+
+
+# PCA
+pca <- PCA(data, quali.sup=c(8))
+plot(pca, axes=c(2, 3), choix='var')
+ggplot(as.data.frame(pca$eig), aes(x=rownames(pca$eig), y=pca$eig[,1])) +
+  geom_col() +
+  geom_text(aes(label=paste(round(pca$eig[,2],2), " %")), vjust=-0.5) +
+  geom_hline(aes(yintercept=1)) +
+  labs(x="Components", y="Eigenvalue")
+  
