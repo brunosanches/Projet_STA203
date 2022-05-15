@@ -1,0 +1,547 @@
+---
+title: "Application de méthodes d'apprentissage statistique à l'analyse de données de grains de raisins"
+output: html_notebook
+---
+
+Auteurs: Cynthia HERKENHOFF LACROIX;
+         Bruno MACEDO SANCHES
+         
+```{r setup}
+require(knitr)
+## Definition du dossier, CHANGER ICI
+opts_knit$set(root.dir = "c:/Users/bruno/Projet_STA203/")
+```
+         
+```{r}
+# Nettoyage de l'environnement
+rm(list=objects())
+graphics.off()
+```
+
+# Chargement de libraries et collecte de données
+
+```{r}
+library("readxl", quietly=TRUE)
+library("dplyr", quietly=TRUE)
+library("ggplot2", quietly=TRUE)
+library("cowplot", quietly=TRUE)
+library("GGally", quietly=TRUE)
+library("FactoMineR", quietly=TRUE)
+library("reshape2", quietly=TRUE)
+library("psych", quietly=TRUE)
+library("stats", quietly=TRUE)
+library("MASS", quietly=TRUE)
+library("purrr", quietly=TRUE)
+library("NMOF", quietly=TRUE)
+library("glmnet", quietly=TRUE)
+library("e1071", quietly=TRUE)
+library("pROC", quietly=TRUE)
+```
+
+```{r}
+df = read_excel("data/Raisin.xlsx")
+head(df)
+```
+
+# Partie I: Analyse non supervisée
+
+## Analyses uni et vi-variées
+
+On commence l'analyse des données par l'exploration du *dataset*
+```{r}
+df %>%
+  group_by(Class) %>%
+  count()
+```
+On a 2 classes, chacun avec 450 observations, donc le jeu de données est équilibrée.
+On fait l'analyse en séparant ce jeu de donnés en deux
+```{r}
+summary(df[df$Class == 'Kecimen',])
+```
+
+```{r}
+summary(df[df$Class == 'Besni',])
+```
+A partir de ces résultats, on voit une différence principalement entre les valeurs 
+de *Area* et *ConvexArea* entre les deux classes éxistantes, on explorera cela après.
+
+
+On plote les boxplots de chaque variable 
+```{r}
+df.m <- melt(df, id.var="Class")
+
+ggplot(df.m, aes(x=variable, y=value)) +
+  geom_boxplot(aes(fill=Class)) +
+  facet_wrap(~variable, scales="free")
+```
+On voit que pour quelques variables (e.g *Area* et *Perimeter*) il y a une différence
+claire entre les deux classes. Ça peut expliquer un peu le résultat de l'article
+vue que les données seront plus faciles de séparer
+
+```{r}
+ggplot(df.m, aes(x=value, fill=Class)) +
+  geom_density(kernel='gaussian', alpha=0.3) +
+  facet_wrap(~variable, scales="free")
+```
+Les graphes de densité sont utiles pour voir que la différence constaté antérieurement
+ne sont pas très claires, cependant, il y existe encore une différence de distribution
+entre les deux classes.
+
+On voit aussi que la variable *Extent* est similairement distribuée pour les deux classes,
+cette variable ne sera pas très utile lors d'analyses.
+
+On commence donc a analyser la relation entre les variables
+```{r}
+ggpairs(df, columns=1:7, aes(color=Class, alpha=0.3), 
+        upper = list(continuous = wrap("cor", size=2)), progress=FALSE) +
+  theme_grey(base_size=8)
+```
+
+On observe que la corrélation entre la variable Area et les variables *MajorAxisLength*,
+*MinorAxisLength*, *ConvexArea* et *Perimeter* est haute (0.933, 0.907,
+0.996 et 0.961 respectivement). Ces variables ne sont pas indépendants et cela c'est claire
+vu que ces variables expliquent de certain façon la taille du grain.
+
+## Analyse en composantes principales
+
+On fait une analyse en composantes principales du jeu de données
+```{r}
+# On centre-réduit le jeu de donnés pour le bien traiter
+df.cr <- data.frame(scale(df[-8], center=TRUE, scale=TRUE)/sqrt((nrow(df)-1)/nrow(df)))
+df.cr$Class <- df$Class
+describe(df.cr[-8])
+```
+
+On calcule l'inertie de ce jeu de données
+```{r}
+mean(rowSums(df.cr[-8]^2))
+```
+
+```{r}
+pca_df <- PCA(df.cr, quali.sup=c(8), ncp=7)
+ggplot(as.data.frame(pca_df$eig), aes(x=rownames(pca_df$eig), y=pca_df$eig[,1])) +
+  geom_col() +
+  geom_text(aes(label=paste(round(pca_df$eig[,2],2), " %")), vjust=-0.5) +
+  geom_hline(aes(yintercept=1)) +
+  labs(x="Components", y="Eigenvalue")
+```
+On voit que les deux premiers composantes principales de l'ACP expliquent 
+presque 90% de la variance du jeu de données. La troisième composant
+possédé un valeur de moins de 1, c'est-à-dire, elle explique moins qu'une variable
+original. **Conclusion** On garde les deux premier composantes principales
+
+```{r}
+p1 <- plot(pca_df, axes=c(1,2), choix='ind', habillage=8)
+p2 <- plot(pca_df, axes=c(1,2), choix='var')
+plot_grid(p1, p2)
+```
+On observe le circle de variables, les variables *Area*, *ConvexArea*, *Perimeter*,
+*MajorAxisLength* et *MinorAxisLength* sont positivement corrélées et bien expliqués par ces
+deux dimensions. Une interprétation possible de la première dimension est la surface
+du grain.
+
+On observe le graphique d'individus, les individus de l’espèce Besni sont plus à droit,
+si on considère l'interprétation antérieur, ces individus sont normalement plus grandes que
+les individus de l'espèce Kecimen.
+
+On plote aussi des graphes pour les composantes 2 et 3
+```{r}
+p1 <- plot(pca_df, axes=c(2,3), choix='ind', habillage=8)
+p2 <- plot(pca_df, axes=c(2,3), choix='var')
+plot_grid(p1, p2)
+```
+On voit que la majorité des variables n'est pas bien expliquée, l'exception sont 
+des variables *Eccentricity* et *Extent*. Cela montre que ces variables sont peut explicatives du jeu de donnée,
+on peut note ça aussi dans le graphique d'individus, oú il n'y a pas assez de différence
+entre les classes.
+
+## Clustering
+
+On comment l'analyse de cluster avec l'algorithme k-means. On calcule la somme de carrés 
+d'accord avec le nombre de clusters
+```{r}
+set.seed(123)
+
+# Calcule la variance intra-classe
+wss <- function(k) {
+  kmeans(df[-8], k, nstart = 10 )$tot.withinss
+}
+k.values <- 1:15
+wss_values <- lapply(k.values, wss)
+plot(k.values, wss_values,
+     type="b", pch = 19, frame = FALSE, 
+       xlab="K",
+       ylab="Variance intra-classe")
+```
+Si on utilise la méthode Elbow, on voit que garder 2 clusters est une bonne option,
+la variation de la variance intra classe se réduit après $k=2$.
+
+On part à l'analyse de groupes en utilisant $k=2$
+
+```{r}
+km <- kmeans(df[-8], centers=2)
+km
+```
+
+```{r}
+ggplot(data=NULL, aes(x=pca_df$ind$coord[,1], y=pca_df$ind$coord[,2], color=as.factor(km$cluster), shape=df$Class)) +
+  geom_point() +
+  labs(x="Dim 1", y="Dim 2", shape="Class", color="Cluster")
+```
+On peut voir que l'algorithme *k-means* a séparée le jeu de donnés en deux *clusters*
+proches à la séparation en classes. Le cluster 2 comporte beaucoup de grains 
+d'espèce Besni et peu d'espèce Kecimen. Le cluster 1 possédé une quantité raisonnable des
+deux classes, mais il comporte la majorité des individus d'espèce Kecimen.
+
+On calcule l'erreur de classification pour ces deux clusters
+
+```{r}
+1 - mean((km$cluster == 1 & df$Class == "Kecimen") | (km$cluster == 2 & df$Class == "Besni"))
+```
+On obtient un erreur de 29.67% avec une classification en utilisant le k-means avec $k=2$.
+
+On veut voir si la normalisation des variables a une influence sur les résultats. On refait 
+l'analyse pour les données centrées-réduits.
+```{r}
+km.cr <- kmeans(df.cr[-8], centers=2)
+km
+```
+
+```{r}
+1 - mean((km$cluster == 1 & df$Class == "Kecimen") | (km$cluster == 2 & df$Class == "Besni"))
+```
+L'erreur de classification pour les données centrées réduites est le même. On 
+peut conclure que la normalisation des variables n'a pas d'influence sur le résultat.
+
+On utilise maintenant l'algorithm de classification hiérarchique ascendante pour trouver des clusters.
+
+```{r}
+dist_df <- dist(df[-8], method='euclidian')
+cha <- hclust(dist_df, method='complete')
+plot(cha)
+```
+On veut avoir 2 clusters pour bien classifier les 2 classes qu'on a 
+```{r}
+cut_cha <- cutree(cha, k=2)
+plot(cha)
+rect.hclust(cha , k = 2, border = 2:4)
+
+```
+Par ce méthode on a une déséquilibre entre les clusters
+```{r}
+print(paste("Cluster 1: ", sum(cut_cha == 1)))
+print(paste("Cluster 1: ", sum(cut_cha == 2)))
+```
+L'erreur de classification est donc
+```{r}
+1 - mean((cut_cha == 1 & df$Class == "Kecimen") | (cut_cha == 2 & df$Class == "Besni"))
+```
+Ce erreur est plus elévé que pour l'algorithme de k-means. On veut voir maintenant
+si la normalisation des variables jeu un rõle dans ce résultat pour cet algorithme
+
+```{r}
+dist_df.cr <- dist(df.cr[-8], method='euclidian')
+cha.cr <- hclust(dist_df.cr, method='complete')
+plot(cha.cr)
+```
+
+L'erreur de classification est donc
+```{r}
+cut_cha.cr <- cutree(cha.cr, k=2)
+1 - mean((cut_cha.cr == 1 & df$Class == "Kecimen") | (cut_cha.cr == 2 & df$Class == "Besni"))
+```
+L'erreur de classification est plus faible pour les variables normalisées ($37.3%$).
+
+On veut maintenant faire un clustering sur les composantes principales de l'ACP fait antérieurement.
+```{r}
+k.values = 1:7
+clust.errors <- function(k) {
+  km <- kmeans(pca_df$ind$coord[,1:k], centers=2, nstart=10)
+  min(1 - mean((km$cluster == 1 & df$Class == "Kecimen") | (km$cluster == 2 & df$Class == "Besni")), 
+      1 - mean((km$cluster == 2 & df$Class == "Kecimen") | (km$cluster == 1 & df$Class == "Besni")))
+}
+errors_values = lapply(k.values, clust.errors)
+plot(k.values, errors_values,
+     type="b", pch = 19, frame = FALSE, 
+       xlab="# Composantes principales",
+       ylab="Erreur de classfication")
+```
+L'erreur de classification est plus faible si on prendre en compte juste la première 
+composante principale. 
+
+**Sans biais ??? JSP**
+
+# Partie II: Analyse supervisée
+Pour l'analyse supervisée, on utilisera un modèle logistique, on doit attribuer un valeur
+0 ou 1 a des espèces du jeu de données, la espèce Besni sera de valeur 0 et Kecimen de
+valeur 1. On utilisera le jeu de donnés obtenu par l'ACP
+```{r}
+df_log <- data.frame(pca_df$ind$coord)
+df_log$Class = df$Class == "Kecimen"
+head(df_log)
+```
+On est dans un cas de données individuelles.
+
+La centrage et réduction des variables explicatives ne sont pas obligatoires d'un point
+de vue théorique pour la régression logistique, cependant, pour la régression lasso
+il est nécessaire vu que la solution n'est pas la même. D'un point de vue pratique, 
+la normalisation des variables aide l'interpretabilité du modèle lorsque les variables
+auront moyenne 0.
+
+On separe le jeu de données en un ensemble *train* et un ensemble *test*
+
+```{r}
+set.seed(1)
+train = sample(c(TRUE, FALSE), nrow(df_log), rep=TRUE, prob=c(2/3,1/3))
+df_train = df_log[train,]
+df_test = df_log[!train,]
+```
+
+On test différents modèles de régression logistique
+a) Modèle complet
+```{r}
+res.glm_complet <- glm(Class~., family="binomial", data=df_train)
+summary(res.glm_complet)
+```
+b) Modèle avec les deux premières composantes principales
+```{r}
+res.glm_2pca <- glm(Class~Dim.1 + Dim.2, family="binomial", data=df_train)
+summary(res.glm_2pca)
+```
+c) En utilisant le critère d'AIC
+Piur cela on utilisera un méthode de *Grid Search* Pour trouver des bons valeurs pour les
+hyperparametres *direction* et *k*.
+```{r}
+
+compute_accuracy_aic <- function(x) {
+  model <- stepAIC(res.glm_complet, direction=x[1], k=as.numeric(x[2]), trace=FALSE)
+  predicted <- predict(model, df_test[-8]) > 0.5
+  mean(predicted == df_test[8])
+}
+
+
+gs <- list(direction=c("both", "backward", "forward"),
+           k = c(2, log(nrow(df_log))))
+
+res_gs <- gridSearch(compute_accuracy_aic, levels=gs)
+
+res_gs
+```
+On voit que l'evaluation d'hyperparametres ne change pas beaucoup la metrique utilisé, 
+on rest donc avec les parametres originaux.
+
+```{r}
+res.glm_aic <- stepAIC(res.glm_complet)
+```
+Le modèle obtenu tulise les 3 premières et la septième composantes principales.
+
+d) Régression pénalisée lasso.
+Pour cela on utilise une validation croisée pour trouver un valeur de lambda optimal
+```{r}
+cv.lasso <- cv.glmnet(as.matrix(df_train[,-8]), df_train[,8], alpha=1, family='binomial')
+plot(cv.lasso)
+
+```
+On a le valeur optimal de lambda et les paramètres du modèle trouvé
+```{r}
+cv.lasso$lambda.min
+```
+```{r}
+coef(cv.lasso)
+```
+On peut donc générer un modèle
+```{r}
+res.glm_lasso <- glmnet(df_train[,-8], df_train[,8], family="binomial", lambda=cv.lasso$lambda.min)
+```
+
+e) Modèle SVM linéaire
+On utilisera du méthode de *grid search* pour trouver les meilleur valeur de coût pour le SVM linéaire
+```{r}
+svm_lin <- best.svm(df_train[,-8], y=as.numeric(df_train[,8]), kernel="linear", 
+         cost=c(10, 1, 0.1, 0.01, 0.001, 0.0001))
+
+svm_lin$cost
+```
+On a $C = 0.01$ idéalement pour ce jeu de données
+
+f) Modèle SVM polynomial
+```{r}
+svm_poly <- best.svm(df_train[,-8], y=as.numeric(df_train[,8]), kernel='polynomial',
+                     cost=c(1, 0.1, 0.01),
+                     gamma=c(0.1, 0.01),
+                     degree=c(2, 4, 6),
+                     coef0=c(0, 1))
+svm_poly
+```
+
+On a maintenant les 6 modèles, on les compare.
+
+On trace la courbe ROC pour le modèle complet sur les échantillon d'apprentissage et de test
+```{r}
+roc_complet_train <- roc(df_train[,8], predict(res.glm_complet, newdata=df_train[,-8]))
+roc_complet_test <- roc(df_test[,8], predict(res.glm_complet, newdata=df_test[,-8]))
+auc_complet_train <- auc(roc_complet_train)
+auc_complet_test <- auc(roc_complet_test)
+
+labels=c("Aleatoire", paste("Train AUC = ", round(auc_complet_train,3)), paste("Test AUC = ", 
+                                                                               round(auc_complet_test,3)))
+
+ggroc(list(Train=roc_complet_train, Test=roc_complet_test)) +
+  geom_segment(aes(x=1, y=0, xend=0, yend=1, color='Aléatoire')) +
+  scale_color_discrete(labels=labels)
+```
+On voit que la performance du modèle pour les ensembles de train et test est
+similaire. On veut comparer maintenant les autres modèles dans l'ensemble de test.
+
+```{r}
+model_list = list()
+labels = c("2 CP", "AIC", "Lasso", "SVM Lin", "SVM Poly")
+i <- 0
+for (model in list(res.glm_2pca, res.glm_aic, res.glm_lasso, svm_lin, svm_poly)) {
+  if ("glmnet" %in% class(model)) {
+    roc <- roc(df_test[,8], predict(model, as.matrix(df_test[,-8])))
+  }
+  else {
+    roc <- roc(df_test[,8], predict(model, df_test[,-8]))
+  }
+  auc <- auc(roc)
+  
+  model_list <- append(model_list, list(roc))
+  i <- i+1
+  labels[i] <- paste(labels[i], " AUC = ", round(auc,3))
+}
+
+ggroc(model_list)+
+  scale_color_discrete(labels=append(labels, "Aléatoire")) +
+  geom_segment(aes(x=1, y=0, xend=0, yend=1, color='Aléatoire'))
+
+```
+Pour les modèles essayés, on a l'AUC plus grande pour le SVM Polynomial et la
+régression logistique sur les 2 premières composantes principales.
+
+On calcule l'erreur de classification pour les modéles sur les échantillons 
+d'apprentissage et de test
+
+```{r}
+model_list =list(res.glm_complet, res.glm_2pca, res.glm_aic, res.glm_lasso, svm_lin, svm_poly)
+labels = c("Complet", "2.CP", "AIC", "Lasso", "SVM.Lin", "SVM.Poly")
+erreurs_df <- data.frame(matrix(ncol=3, nrow=0))
+colnames(erreurs_df) <- c("model", "train", "test")
+i <- 0
+for (model in model_list) {
+  i <- i+1
+  if ("glmnet" %in% class(model)) {
+    row <- list(model = labels[i],
+                   train=1-mean(df_train[,8] == (predict(model, as.matrix(df_train[,-8])) > 0.5)),
+                   test=1-mean(df_test[,8] == (predict(model, as.matrix(df_test[,-8])) > 0.5)))
+  }
+  else {
+    row <- list(model=labels[i],
+                   train=1-mean(df_train[,8] == (predict(model, df_train[,-8]) > 0.5)),
+                   test=1-mean(df_test[,8] == (predict(model, df_test[,-8]) > 0.5)))
+  }
+  
+  erreurs_df[i,] <- row
+}
+
+erreurs_df
+```
+On voit que l'erreur de test du SVM linéaire est plus faible que les autres modèles. 
+Le SVM polynomial a un erreur de apprentissage plus faible, cela peut indiquer
+une sur apprentissage et une variance plus grande pour ce modèle. On retient le modéle
+SVM linéaire lorsque il s'adapte mieux aux donnés pas encore vues.
+
+# Partie III: Analyse discriminante
+
+On commence par calculer la projection des données de test sur le plan principal
+associée au jeu d'apprentissage
+```{r}
+pca_train <- PCA(df.cr[train,], quali.sup=c(8), ncp=7)
+```
+```{r}
+proj_test <- data.frame(predict(pca_train, newdata=df.cr[!train,-8])$coord)
+proj_test$Class <- df.cr[!train, ]$Class
+ggplot(proj_test, aes(x=Dim.1, y=Dim.2, color=Class)) +
+  geom_point()
+```
+
+## Analyse Discriminante Linéaire (LDA)
+L'analyse discriminante fait la supposition que les variables ont des distributions
+gaussiennes, de même variance entre les classes, on a la probabilité a posteriori.
+
+$\pi_c(x) = \mathbb{P}(Y_c = 1|X = x) = \frac{\mathbb{P}(Y=c)exp-\frac{1}{2}[(x-\mu_c)'\Sigma^{-1}(x-\mu_c)]}{
+\sum _l\mathbb{P}(Y=l)exp-\frac{1}{2}[(x-\mu_l)'\Sigma^{-1}(x-\mu_l)]}$
+
+On cherche c qui maximise $\pi_c(x)$.
+
+Le classifieur associée s'est écrit comme
+$\delta_c(x) = x'\Sigma^{-1}\mu_c-\frac{1}{2}\mu_c'\Sigma^{-1}\mu_c + log(\pi_c)$
+
+On définit aussi le classifieur pour deux classes comme une frontière
+$\overrightarrow{\omega} \cdot  \overrightarrow{x} > c$
+
+On calcule les valeurs des coefficients comme
+
+$\overrightarrow{\omega} = \Sigma^{-1}(\overrightarrow{\mu_1} - \overrightarrow{\mu_0})$
+
+$c = \overrightarrow{\omega} \cdot \frac{1}{2}(\overrightarrow{\mu_1} + \overrightarrow{\mu_0})$
+
+On estime les paramètres par la méthode du maximum de vraisemblance
+```{r}
+df_pca2 <- data.frame(pca_train$ind$coord)
+df_pca2$Class <- df.cr[train,]$Class
+
+mu <- df_pca2 %>%
+  group_by(Class) %>%
+  dplyr::select(Dim.1, Dim.2) %>%
+  summarise_each(mean)
+
+sigma <- cor(df_pca2[,1:2])
+
+omega <- solve(sigma)%*%t(as.matrix(mu[2,-1]-mu[1,-1]))
+c <- t(omega)%*%t(as.matrix((1/2 * (mu[2,-1]+mu[1,-1]))))
+
+print(list(omega=omega, c=c))
+```
+
+**Achar essa formula ai pra calcular a fronteira de decisão sem inverter a matrix**
+
+```{r}
+ggplot(df_pca2, aes(x=Dim.1, y=Dim.2, color=Class)) +
+  geom_point() +
+  geom_abline(slope=-omega[1]/omega[2], intercept=-c/omega[2])
+```
+
+On calcule l'erreur sur le jeu de test
+```{r}
+1- mean(sapply(as.matrix(proj_test[,1:2]) %*% omega, function(x) {x > c}) == (proj_test$Class == "Kecimen"))
+```
+On a un erreur de $14.33$ pour le LDA, comme on a calculé à la main, on veut maintenant
+vérifier le valeur avec la fonction *lda* du package *MASS* et la fonction *predict*
+
+```{r}
+lda_pca2 <- lda(Class~Dim.1 + Dim.2, data=df_pca2)
+lda_pca2
+```
+
+```{r}
+1-mean(predict(lda_pca2, newdata=proj_test[,1:2])$class == proj_test$Class)
+```
+On confirme le valeur calculé à la main obtenu antérieurement
+
+On considère maintenant toutes les variables initiales du jeu de données
+
+```{r}
+lda_pca_complet <- lda(Class~., data=df_pca2)
+lda_pca_complet
+```
+```{r}
+1-mean(predict(lda_pca_complet, newdata=proj_test[,1:7])$class == proj_test$Class)
+```
+On obtient le même erreur de $14.33%$. Ce résultat est inférieur par $1%$ que le meilleur
+résultat obtenu par le SVM linéaire $13.33%$ sur le jeu de test.
+
+# Conclusion
+On peut conclure que pour ce jeu de données e entre les méthodes essayées, le 
+SVM est plus performante dans la métrique de **précision** que les autres modèles. On
+le retient.
