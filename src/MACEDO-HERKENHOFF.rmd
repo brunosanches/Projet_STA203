@@ -267,9 +267,9 @@ plot(k.values, errors_values,
        ylab="Erreur de classfication")
 ```
 L'erreur de classification est plus faible si on prendre en compte juste la première 
-composante principale. 
+composante principale. L'algorithme de k-moyennes donne un résultat biaisé, l'algorithme 
+fait une estimation biaisé des distances des moyennes réales.
 
-**Sans biais ??? JSP**
 
 # Partie II: Analyse supervisée
 Pour l'analyse supervisée, on utilisera un modèle logistique, on doit attribuer un valeur
@@ -504,7 +504,6 @@ c <- t(omega)%*%t(as.matrix((1/2 * (mu[2,-1]+mu[1,-1]))))
 print(list(omega=omega, c=c))
 ```
 
-**Achar essa formula ai pra calcular a fronteira de decisão sem inverter a matrix**
 
 ```{r}
 ggplot(df_pca2, aes(x=Dim.1, y=Dim.2, color=Class)) +
