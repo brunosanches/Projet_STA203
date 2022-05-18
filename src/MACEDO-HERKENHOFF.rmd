@@ -516,7 +516,7 @@ On calcule l'erreur sur le jeu de test
 ```{r}
 1- mean(sapply(as.matrix(proj_test[,1:2]) %*% omega, function(x) {x > c}) == (proj_test$Class == "Kecimen"))
 ```
-On a un erreur de $14.33$ pour le LDA, comme on a calculé à la main, on veut maintenant
+On a un erreur de $14.33\%$ pour le LDA, comme on a calculé à la main, on veut maintenant
 vérifier le valeur avec la fonction *lda* du package *MASS* et la fonction *predict*
 
 ```{r}
@@ -538,8 +538,8 @@ lda_pca_complet
 ```{r}
 1-mean(predict(lda_pca_complet, newdata=proj_test[,1:7])$class == proj_test$Class)
 ```
-On obtient le même erreur de $14.33%$. Ce résultat est inférieur par $1%$ que le meilleur
-résultat obtenu par le SVM linéaire $13.33%$ sur le jeu de test.
+On obtient le même erreur de $14.33\%$. Ce résultat est inférieur par $1\%$ que le meilleur
+résultat obtenu par le SVM linéaire $13.33\%$ sur le jeu de test.
 
 # Conclusion
 On peut conclure que pour ce jeu de données e entre les méthodes essayées, le 
