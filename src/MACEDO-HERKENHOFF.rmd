@@ -3,7 +3,7 @@ title: "Application de méthodes d'apprentissage statistique à l'analyse de don
 output: html_notebook
 ---
 
-Auteurs: Cynthia HERKENHOFF LACROIX;
+Auteurs: Cynthia LACROIX HERKENHOFF;
          Bruno MACEDO SANCHES
          
 ```{r setup}
